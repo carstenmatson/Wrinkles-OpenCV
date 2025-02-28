@@ -5,10 +5,8 @@ import cv2
 import numpy as np
 import os
 
-# ✅ Import modules
-from preprocessing.crop_face import detect_and_crop_faces
-from preprocessing.extract_regions import detect_and_extract_regions
-from main.wrinkles import detect_wrinkles
+# ✅ Import the wrinkles detection module (since it's in the root directory)
+from wrinkles import detect_wrinkles
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend integration
@@ -16,12 +14,7 @@ CORS(app)  # Enable CORS for frontend integration
 # ✅ Set up directories
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
-PROCESSED_DIR = os.path.join(BASE_DIR, "data/processed_faces")
-REGIONS_DIR = os.path.join(BASE_DIR, "data/extracted_regions")
-
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(PROCESSED_DIR, exist_ok=True)
-os.makedirs(REGIONS_DIR, exist_ok=True)
 
 def normalize_score(score, min_value=25, max_value=100):
     """Ensure wrinkle scores stay between 25 and 100."""
@@ -48,28 +41,18 @@ def analyze():
     filename = os.path.join(UPLOAD_DIR, file.filename)
     file.save(filename)
 
-    # ✅ Step 1: Detect and crop face
-    processed_path = os.path.join(PROCESSED_DIR, file.filename)
-    detect_and_crop_faces(filename, PROCESSED_DIR)
+    # ✅ Directly compute wrinkle score for the whole image
+    image = cv2.imread(filename)
+    if image is None:
+        return jsonify({"error": "Invalid image format"}), 400
 
-    # ✅ Step 2: Extract facial regions
-    detect_and_extract_regions(processed_path, REGIONS_DIR)
+    raw_score = detect_wrinkles(image, skin_tone)
+    wrinkle_score = normalize_score(raw_score)
 
-    # ✅ Step 3: Compute wrinkle score for each region
-    region_scores = {}
-    for region in ["forehead", "left_cheek", "right_cheek", "chin"]:
-        region_path = os.path.join(REGIONS_DIR, f"{os.path.splitext(file.filename)[0]}_{region}.jpg")
-        if os.path.exists(region_path):
-            region_image = cv2.imread(region_path)
-            raw_score = detect_wrinkles(region_image, skin_tone)
-            region_scores[region] = normalize_score(raw_score)
-
-    if not region_scores:
-        return jsonify({"error": "No facial regions detected"}), 400
-
-    return jsonify({"wrinkle_scores": region_scores})
+    return jsonify({"wrinkle_score": wrinkle_score})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
+
 
